@@ -1,0 +1,1252 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+####################
+# Parameters
+####################
+
+Parameters:
+  OperatorEmail:
+    Description: The email address to notify when there are any scaling activities
+    Type: String
+    Default: ergi@roi.ad
+  RDSPostgresClusterPassword:
+    Description: The password for the database
+    NoEcho: "true"
+    Type: String
+    MinLength: "8"
+    MaxLength: "41"
+    Default: P@ssw0rd!234Complex
+  LogRetentionInDays:
+    Type: Number
+    Default: 30
+    Description: Number of days to retain logs in CloudWatch Logs
+  KeyPairName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instances
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: must be the name of an existing EC2 KeyPair.
+  # New parameters for existing resources
+  ExistingLoadBalancerArn:
+    Description: ARN of an existing Application Load Balancer (leave empty to create a new one)
+    Type: String
+    Default: ""
+  ExistingTargetGroupArn:
+    Description: ARN of an existing Target Group (leave empty to create a new one)
+    Type: String
+    Default: ""
+
+####################
+# Conditions
+####################
+
+Conditions:
+  CreateNewLoadBalancer: !Equals [!Ref ExistingLoadBalancerArn, ""]
+  CreateNewTargetGroup: !Equals [!Ref ExistingTargetGroupArn, ""]
+
+####################
+# Resources
+####################
+
+Resources:
+  # Creating the VPC
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.10.0.0/16
+      EnableDnsSupport: yes
+      EnableDnsHostnames: yes
+      Tags:
+        - Key: Name
+          Value: Rejuve-VPC
+        - Key: project
+          Value: rejuve
+
+  # Creating Internet Gateway
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: Rejuve-InternetGateway
+        - Key: project
+          Value: rejuve
+
+  # Attaching the ITG to the VPC
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # Creating Public Subnet 1
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: us-east-1a
+      CidrBlock: 10.10.1.0/24
+      MapPublicIpOnLaunch: yes
+      Tags:
+        - Key: Name
+          Value: Rejuve-PublicSubnet1
+        - Key: project
+          Value: rejuve
+
+  # Creating Public Subnet 2
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: us-east-1b
+      CidrBlock: 10.10.2.0/24
+      MapPublicIpOnLaunch: yes
+      Tags:
+        - Key: Name
+          Value: Rejuve-PublicSubnet2
+        - Key: project
+          Value: rejuve
+
+  # Creating Public Subnet 3
+  PublicSubnet3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: us-east-1c
+      CidrBlock: 10.10.3.0/24
+      MapPublicIpOnLaunch: yes
+      Tags:
+        - Key: Name
+          Value: Rejuve-PublicSubnet3
+        - Key: project
+          Value: rejuve
+
+  # Creating a Public Route Table
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: Rejuve-PublicRouteTable
+        - Key: project
+          Value: rejuve
+
+  # Configuring Public Route
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  # Associating Subnet 1 and Route Table
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+
+  # Associating Subnet 2 and Route Table
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet2
+
+  # Associating Subnet 3 and Route Table
+  PublicSubnet3RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet3
+
+  # Creating Security Group for EC2 Instances
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: Rejuve-BE
+      GroupDescription: Enable SSH access and HTTP
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 3500
+          ToPort: 3500
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 5000
+          ToPort: 5000
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 11211
+          ToPort: 11211
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: Rejuve-BE
+        - Key: project
+          Value: rejuve
+
+  # Creating a separate Security Group for RDS
+  RDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: Rejuve-BE-RDS
+      GroupDescription: Security group for RDS database
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: Rejuve-BE-RDS
+        - Key: project
+          Value: rejuve
+
+  # Creating a separate Security Group for ALB
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: Rejuve-BE-ALB
+      GroupDescription: Security group for Application Load Balancer
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: Rejuve-BE-ALB
+        - Key: project
+          Value: rejuve
+
+  # Add ingress rule to instance security group from ALB security group after both are created
+  InstanceFromALBRule:
+    Type: AWS::EC2::SecurityGroupIngress
+    DependsOn: 
+      - InstanceSecurityGroup
+      - ALBSecurityGroup
+    Properties:
+      GroupId: !Ref InstanceSecurityGroup
+      IpProtocol: tcp
+      FromPort: 0
+      ToPort: 65535
+      SourceSecurityGroupId: !Ref ALBSecurityGroup
+
+  # Add egress rule to ALB security group to instances after both are created
+  ALBToInstanceRule:
+    Type: AWS::EC2::SecurityGroupEgress
+    DependsOn: 
+      - InstanceSecurityGroup
+      - ALBSecurityGroup
+    Properties:
+      GroupId: !Ref ALBSecurityGroup
+      IpProtocol: tcp
+      FromPort: 0
+      ToPort: 65535
+      DestinationSecurityGroupId: !Ref InstanceSecurityGroup
+
+  # Configuring launch template with explicit dependency on security group
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    DependsOn: InstanceSecurityGroup
+    Properties:
+      LaunchTemplateName: Rejuve-BE
+      LaunchTemplateData:
+        BlockDeviceMappings:
+          - DeviceName: /dev/sda1
+            Ebs:
+              VolumeSize: 33
+              VolumeType: gp3
+              DeleteOnTermination: yes
+              Encrypted: false
+        IamInstanceProfile:
+          Name: !Ref CodeDeployInstanceProfile
+        NetworkInterfaces:
+          - DeviceIndex: 0
+            AssociatePublicIpAddress: yes
+            DeleteOnTermination: yes
+            Groups:
+              - !Ref InstanceSecurityGroup
+        ImageId: ami-0e001c9271cf7f3b9 # Ubuntu Server 22.04 LTS (HVM) SSD
+        KeyName: !Ref KeyPairName
+        InstanceType: t3a.small
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            # Update and install initial packages
+            sudo apt-get update && \
+            sudo apt-get upgrade -y && \
+            sudo apt-get install -y python3 ca-certificates curl gnupg curl htop wget zip memcached ruby && \
+            sudo mkdir -p /var/www/rejuve-backend && \
+            sudo chown -R ubuntu:ubuntu /var/www/rejuve-backend
+
+            # IMPORTANT: Default user for Ubuntu is "ubuntu", not "ec2-user"
+            # Any scripts or configurations should use the "ubuntu" user
+            
+            # Install NodeJS
+            sudo mkdir -p /etc/apt/keyrings
+            curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
+
+            NODE_MAJOR=20
+            echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_$NODE_MAJOR.x nodistro main" | sudo tee /etc/apt/sources.list.d/nodesource.list
+
+            sudo apt-get update
+            sudo apt-get install nodejs -y
+
+            # Install PM2
+            sudo npm install pm2@latest -g
+
+            # Install CodeDeploy Agent
+            cd /tmp && \
+            wget https://aws-codedeploy-us-east-1.s3.us-east-1.amazonaws.com/latest/install && \
+            sudo chmod +x ./install && \
+            sudo ./install auto && \
+            sudo service codedeploy-agent stop
+            # Configure CodeDeploy to use the ubuntu user instead of ec2-user
+            sudo sed -i 's/:ec2-user:/:ubuntu:/g' /etc/init.d/codedeploy-agent
+            sudo sed -i 's/USER=ec2-user/USER=ubuntu/g' /etc/init.d/codedeploy-agent
+            sudo service codedeploy-agent start
+            
+            # Create CodeDeploy config file with correct user
+            sudo mkdir -p /etc/codedeploy-agent/conf
+            echo "---
+            :log_aws_wire: false
+            :log_dir: '/var/log/aws/codedeploy-agent/'
+            :pid_dir: '/opt/codedeploy-agent/state/.pid/'
+            :program_name: codedeploy-agent
+            :root_dir: '/opt/codedeploy-agent/deployment-root'
+            :verbose: false
+            :wait_between_runs: 1
+            :proxy_uri:
+            :max_revisions: 5
+            :user: ubuntu" | sudo tee /etc/codedeploy-agent/conf/codedeployagent.yml
+
+            # Create default appspec.yml template with correct user
+            mkdir -p /var/www/rejuve-backend
+            cat > /var/www/rejuve-backend/appspec.yml << 'EOL'
+            version: 0.0
+            os: linux
+            files:
+              - source: /
+                destination: /var/www/rejuve-backend
+            permissions:
+              - object: /var/www/rejuve-backend
+                owner: ubuntu
+                group: ubuntu
+                mode: 755
+                type: directory
+              - object: /var/www/rejuve-backend/scripts
+                owner: ubuntu
+                group: ubuntu
+                mode: 755
+                type: directory
+            hooks:
+              BeforeInstall:
+                - location: scripts/before_install.sh
+                  timeout: 300
+                  runas: ubuntu
+              AfterInstall:
+                - location: scripts/after_install.sh
+                  timeout: 300
+                  runas: ubuntu
+              ApplicationStart:
+                - location: scripts/start_application.sh
+                  timeout: 300
+                  runas: ubuntu
+              ApplicationStop:
+                - location: scripts/stop_application.sh
+                  timeout: 300
+                  runas: ubuntu
+              AllowTraffic:
+                - location: scripts/allow_traffic.sh
+                  timeout: 60
+                  runas: ubuntu
+            EOL
+
+            # Create allow_traffic.sh script
+            mkdir -p /var/www/rejuve-backend/scripts
+            cat > /var/www/rejuve-backend/scripts/allow_traffic.sh << 'EOL'
+            #!/bin/bash
+            # Enhanced script to handle AllowTraffic lifecycle event
+            echo "$(date) - AllowTraffic event started" >> /var/log/rejuve-deployment.log
+
+            # Make sure the health check app is running
+            if ! pgrep -f "node.*app.js" > /dev/null; then
+              echo "$(date) - Health check app not running, starting it..." >> /var/log/rejuve-deployment.log
+              cd /var/www/health-check
+              pm2 start app.js --name health-check
+              pm2 save
+              sleep 5
+            fi
+
+            # Try health check multiple times with delay
+            MAX_ATTEMPTS=5
+            ATTEMPT=1
+            while [ $ATTEMPT -le $MAX_ATTEMPTS ]; do
+              echo "$(date) - Health check attempt $ATTEMPT/$MAX_ATTEMPTS" >> /var/log/rejuve-deployment.log
+              RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3500/health)
+              
+              if [ "$RESPONSE" = "200" ]; then
+                echo "$(date) - Health check passed with status code 200" >> /var/log/rejuve-deployment.log
+                exit 0
+              else
+                echo "$(date) - Health check failed with status code $RESPONSE" >> /var/log/rejuve-deployment.log
+                sleep 2
+                ATTEMPT=$((ATTEMPT+1))
+              fi
+            done
+
+            echo "$(date) - All health check attempts failed" >> /var/log/rejuve-deployment.log
+            exit 1
+            EOL
+            chmod +x /var/www/rejuve-backend/scripts/allow_traffic.sh
+
+            # Add alias for pm2
+            echo "alias pm2='sudo pm2'" >> ~/.bashrc
+            echo "alias htop='sudo htop'" >> ~/.bashrc
+            # Add alias for quickly accessing the project directory
+            echo "alias rejuve='cd /var/www/rejuve-backend && ll'" >> ~/.bashrc
+            echo "alias logs='cd /var/www/rejuve-backend && pm2 logs'" >> ~/.bashrc
+            # Add alias for quickly resetting the application
+            echo "alias reset='cd /var/www/rejuve-backend && pm2 stop ecosystem.config.js && pm2 delete ecosystem.config.js &&  pm2 start ecosystem.config.js --env production && pm2 save && pm2 logs'" >> ~/.bashrc
+            echo "alias upup='sudo apt update && sudo apt upgrade -y && sudo apt-get autoremove -y && sudo apt-get autoclean -y'" >> ~/.bashrc
+            source ~/.bashrc
+
+            # Define environment
+            echo -e "DATABASE_ENVIRONMENT=production\nSTACK=REJUVE\nEC2_USER=ubuntu" | sudo tee /etc/profile.d/rejuve-backend.env > /dev/null
+
+            # Create a dummy Express Js app on port 3500 for the health check
+            sudo mkdir -p /var/www/health-check
+            cd /var/www/health-check
+            sudo npm init -y
+            sudo npm install express
+            sudo tee app.js > /dev/null << 'EOL'
+            const express = require('express');
+            const app = express();
+            const os = require('os');
+
+            // Basic health endpoint
+            app.get('/health', (req, res) => {
+              res.status(200).json({ 
+                status: 'healthy',
+                host: os.hostname(),
+                timestamp: new Date().toISOString()
+              });
+            });
+
+            // Root endpoint
+            app.get('/', (req, res) => {
+              res.send('The World is Yours!');
+            });
+
+            // Start server
+            const PORT = 3500;
+            app.listen(PORT, '0.0.0.0', () => {
+              console.log('Health check app listening on port ' + PORT);
+            });
+            EOL
+
+            # Start the app
+            cd /var/www/health-check
+            sudo pm2 start app.js --name health-check
+            
+            # Configure PM2 to start on boot
+            sudo pm2 startup
+            sudo pm2 save
+            
+            # Verify the health check app is running
+            echo "Testing health check endpoint:"
+            curl -v http://localhost:3500/health
+
+            # Wait a moment for the health check to stabilize
+            sleep 10
+
+        TagSpecifications:
+          - ResourceType: volume
+            Tags:
+              - Key: Name
+                Value: Rejuve-BE Volume
+              - Key: project
+                Value: rejuve
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: Rejuve-BE Instance
+              - Key: project
+                Value: rejuve
+
+  NotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      Subscription:
+        - Endpoint: !Ref OperatorEmail
+          Protocol: email
+      TopicName: Rejuve-ScalingNotification
+      Tags:
+        - Key: Name
+          Value: Rejuve-ScalingNotification
+        - Key: project
+          Value: rejuve
+
+  # Create an Auto Scaling Group
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    DependsOn: 
+      - LaunchTemplate
+      - NotificationTopic
+      - VPC
+      - PublicSubnet1
+      - PublicSubnet2
+      - PublicSubnet3
+    Properties:
+      AutoScalingGroupName: Rejuve-BE-ASG
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      MaxSize: "3"
+      MinSize: "1"
+      DesiredCapacity: "2"
+      NotificationConfigurations:
+        - TopicARN: !Ref NotificationTopic
+          NotificationTypes:
+            [
+              "autoscaling:EC2_INSTANCE_LAUNCH",
+              "autoscaling:EC2_INSTANCE_LAUNCH_ERROR",
+              "autoscaling:EC2_INSTANCE_TERMINATE",
+              "autoscaling:EC2_INSTANCE_TERMINATE_ERROR",
+            ]
+      TargetGroupARNs:
+        - !If [CreateNewTargetGroup, !Ref ALBTargetGroup, !Ref ExistingTargetGroupArn]
+      VPCZoneIdentifier:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+        - !Ref PublicSubnet3
+      Tags:
+        - Key: Name
+          Value: Rejuve-BE Instance
+          PropagateAtLaunch: true
+        - Key: project
+          Value: rejuve
+          PropagateAtLaunch: true
+
+  # Scaling Policy
+  ScalingPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    DependsOn: 
+      - AutoScalingGroup
+    Properties:
+      AdjustmentType: ChangeInCapacity
+      AutoScalingGroupName: !Ref AutoScalingGroup
+      ScalingAdjustment: "1"
+
+  # Alarm for testing
+  CloudWatchAlarm:
+    Type: AWS::CloudWatch::Alarm
+    DependsOn: 
+      - AutoScalingGroup
+      - ScalingPolicy
+    Properties:
+      AlarmName: Rejuve-CPU-Alarm
+      EvaluationPeriods: "1"
+      Statistic: Average
+      Threshold: "70"
+      AlarmDescription: Alarm set fo 70% of CPU utilization
+      Period: "60"
+      AlarmActions:
+        - !Ref ScalingPolicy
+      Namespace: AWS/EC2
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref AutoScalingGroup
+      ComparisonOperator: GreaterThanThreshold
+      MetricName: CPUUtilization
+
+  # Creating an Application Load Balancer
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Condition: CreateNewLoadBalancer
+    Properties:
+      Name: RejuveALB
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+        - !Ref PublicSubnet3
+      Tags:
+        - Key: Name
+          Value: RejuveALB
+        - Key: project
+          Value: rejuve
+
+  # Configuring Application Load Balancer Target Group
+  ALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Condition: CreateNewTargetGroup
+    Properties:
+      Name: !Sub "BE-${AWS::StackName}-${AWS::Region}"
+      HealthCheckEnabled: true
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 5
+      HealthCheckPath: /health
+      Port: 3500
+      Protocol: HTTP
+      TargetType: instance
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: ALBTargetGroup
+        - Key: project
+          Value: rejuve
+
+  # Configuring Application Load Balancer Listener
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: CreateNewLoadBalancer
+    DependsOn:
+      - ApplicationLoadBalancer
+      - ALBTargetGroup
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !If [CreateNewTargetGroup, !Ref ALBTargetGroup, !Ref ExistingTargetGroupArn]
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: "80"
+      Protocol: HTTP
+
+  # Configuring Application Load Balancer Listener Rule
+  ALBListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Condition: CreateNewLoadBalancer
+    DependsOn: ALBListener
+    Properties:
+      Actions:
+        - Type: forward
+          TargetGroupArn: !If [CreateNewTargetGroup, !Ref ALBTargetGroup, !Ref ExistingTargetGroupArn]
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - /*
+      ListenerArn: !Ref ALBListener
+      Priority: "1"
+
+  RDSPostgresDB:
+    Type: AWS::RDS::DBInstance
+    DependsOn: 
+      - DBSubnetGroup
+      - RDSSecurityGroup
+    Properties:
+      AllocatedStorage: 70
+      DeletionProtection: false
+      DBInstanceClass: db.t4g.small
+      Engine: postgres
+      EngineVersion: 15.9
+      DBInstanceIdentifier: rejuve-be
+      DBName: rejuve
+      MasterUsername: rejuveapp
+      MasterUserPassword: !Ref RDSPostgresClusterPassword
+      PubliclyAccessible: true
+      BackupRetentionPeriod: 5
+      Port: 5432
+      StorageEncrypted: false
+      StorageType: gp3
+      PreferredBackupWindow: 00:30-01:00
+      PreferredMaintenanceWindow: mon:03:00-mon:03:30
+      AutoMinorVersionUpgrade: true
+      AllowMajorVersionUpgrade: true
+      MonitoringInterval: 60
+      MonitoringRoleArn: !GetAtt RDSMonitoringRole.Arn
+      EnablePerformanceInsights: true
+      PerformanceInsightsRetentionPeriod: 31
+      VPCSecurityGroups:
+        - !Ref RDSSecurityGroup
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      Tags:
+        - Key: Name
+          Value: Rejuve-BE
+        - Key: project
+          Value: rejuve
+
+  RDSMonitoringRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - monitoring.rds.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: RDSMonitoringRolePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudwatch:*
+                  - logs:*
+                Resource: "*"
+
+  # Create a DB Subnet Group
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet group for Rejuve RDS
+      SubnetIds:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+        - !Ref PublicSubnet3
+      Tags:
+        - Key: Name
+          Value: Rejuve-BE-SubnetGroup
+        - Key: project
+          Value: rejuve
+
+  # a cloudwatch log group for the application
+  ApplicationLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/ec2/rejuve-be-production
+      RetentionInDays: 30
+      Tags:
+        - Key: Name
+          Value: Rejuve-Staging-EC2LogGroup
+        - Key: project
+          Value: rejuve
+
+  # Create an ElastiCache Memcached Cluster
+  # MemcachedCluster:
+  #   Type: AWS::ElastiCache::CacheCluster
+  #   Properties:
+  #     ClusterName: Rejuve-BE
+  #     CacheNodeType: cache.t4g.small
+  #     Engine: memcached
+  #     EngineVersion: 1.6.22
+  #     NumCacheNodes: 1
+  #     Port: 11211
+  #     VpcSecurityGroupIds:
+  #       - !Ref InstanceSecurityGroup
+  #     CacheSubnetGroupName: !Ref CacheSubnetGroup
+  #     AutoMinorVersionUpgrade: true
+  #     Tags:
+  #       - Key: Name
+  #         Value: Rejuve-BE
+  #       - Key: project
+  #         Value: rejuve
+  #       - Key: component
+  #         Value: cache
+
+  # # Add memcached servers to parameter store
+  # MemcachedServersParameter:
+  #   Type: AWS::SSM::Parameter
+  #   Properties:
+  #     Name: MEMCACHED_SERVERS_PRODUCTION
+  #     Type: String
+  #     Value: !GetAtt MemcachedCluster.ConfigurationEndpoint.Address
+
+  # Create a Cache Subnet Group
+  CacheSubnetGroup:
+    Type: AWS::ElastiCache::SubnetGroup
+    Properties:
+      Description: Subnet group for Rejuve ElastiCache
+      SubnetIds:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+        - !Ref PublicSubnet3
+      Tags:
+        - Key: Name
+          Value: Rejuve-BE-SubnetGroup
+        - Key: project
+          Value: rejuve
+        - Key: component
+          Value: cache
+
+  # Create CodeDeploy Application
+  CodeDeployApplication:
+    Type: AWS::CodeDeploy::Application
+    Properties:
+      ApplicationName: Rejuve-BE
+      ComputePlatform: Server
+      Tags:
+        - Key: Name
+          Value: Rejuve-BE
+        - Key: project
+          Value: rejuve
+        - Key: operation
+          Value: deployment
+
+  # Create CodeDeploy Deployment Configuration with shorter timeouts
+  CustomDeploymentConfig:
+    Type: AWS::CodeDeploy::DeploymentConfig
+    Properties:
+      DeploymentConfigName: Rejuve-BE-FastDeploy
+      MinimumHealthyHosts:
+        Type: HOST_COUNT
+        Value: 0
+      ComputePlatform: Server
+
+  # Create CodeDeploy Deployment Group
+  CodeDeployDeploymentGroup:
+    Type: AWS::CodeDeploy::DeploymentGroup
+    DependsOn: 
+      - AutoScalingGroup
+      - CodeDeployServiceRole
+      - NotificationTopic
+    Properties:
+      ApplicationName: !Ref CodeDeployApplication
+      DeploymentGroupName: Rejuve-BE
+      DeploymentConfigName: !Ref CustomDeploymentConfig
+      ServiceRoleArn: !GetAtt CodeDeployServiceRole.Arn
+      AutoScalingGroups:
+        - !Ref AutoScalingGroup
+      DeploymentStyle:
+        DeploymentOption: WITH_TRAFFIC_CONTROL
+        DeploymentType: IN_PLACE
+      LoadBalancerInfo:
+        TargetGroupInfoList:
+          - Name: !If 
+              - CreateNewTargetGroup
+              - !GetAtt ALBTargetGroup.TargetGroupName
+              - !Select [1, !Split ["/", !Ref ExistingTargetGroupArn]]
+      TriggerConfigurations:
+        - TriggerEvents:
+            - DeploymentFailure
+            - DeploymentStop
+            - DeploymentSuccess
+          TriggerName: Rejuve-BE-DeploymentTrigger
+          TriggerTargetArn: !Ref NotificationTopic
+      AlarmConfiguration:
+        Enabled: true
+        IgnorePollAlarmFailure: false
+        Alarms:
+          - Name: !Ref AllowTrafficTimeoutAlarm
+      Tags:
+        - Key: Name
+          Value: Rejuve-BE-DeploymentGroup
+        - Key: project
+          Value: rejuve
+        - Key: operation
+          Value: deployment
+
+  # Create CodeDeploy Service Role
+  CodeDeployServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codedeploy.amazonaws.com
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: CodeDeployServiceRolePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - autoscaling:*
+                  - ec2:Describe*
+                  - elasticloadbalancing:*
+                  - s3:*
+                  - iam:PassRole
+                  - sns:*
+                  - sqs:*
+                  - dynamodb:*
+                  - logs:*
+                  - cloudwatch:*
+                  - cloudformation:*
+                  - codedeploy:*
+                  - secretsmanager:GetSecretValue
+                  - ssm:GetParameter*
+                Resource: "*"
+
+  # Create CodeDeploy Instance Profile
+  CodeDeployInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: "/"
+      Roles:
+        - !Ref CodeDeployServiceRole
+      InstanceProfileName: Rejuve-BE-InstanceProfile
+
+  # Create CodeDeploy Role
+  CodeDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codedeploy.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: CodeDeployRolePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - autoscaling:*
+                  - ec2:*
+                  - elasticloadbalancing:*
+                  - iam:PassRole
+                  - s3:*
+                  - sns:*
+                  - sqs:*
+                  - dynamodb:*
+                  - logs:*
+                  - cloudwatch:*
+                  - cloudformation:*
+                  - codedeploy:*
+                  - secretsmanager:GetSecretValue
+                  - ssm:GetParameter*
+                Resource: "*"
+
+  # Create CodeDeploy Role Policy
+  CodeDeployRolePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: CodeDeployRolePolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - autoscaling:*
+              - ec2:*
+              - elasticloadbalancing:*
+              - iam:PassRole
+              - s3:*
+              - sns:*
+              - sqs:*
+              - dynamodb:*
+              - logs:*
+              - cloudwatch:*
+              - cloudformation:*
+              - codedeploy:*
+              - secretsmanager:GetSecretValue
+              - ssm:GetParameter*
+            Resource: "*"
+      Roles:
+        - !Ref CodeDeployRole
+
+  # Create CodeDeploy Role Instance Profile
+  CodeDeployRoleInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: "/"
+      Roles:
+        - !Ref CodeDeployRole
+      InstanceProfileName: Rejuve-BE
+
+  FirewallProtection:
+    Type: AWS::WAFv2::WebACL
+    Properties:
+      Description: Firewall protection for Rejuve BE Production
+      Name: Rejuve-BE-Production-WebACL
+      Scope: REGIONAL
+      DefaultAction:
+        Allow: {}
+      VisibilityConfig:
+        SampledRequestsEnabled: true
+        CloudWatchMetricsEnabled: true
+        MetricName: Rejuve-BE-Production-WebACL
+      Tags:
+        - Key: project
+          Value: rejuve
+        - Key: operation
+          Value: firewall
+      Rules:
+        - Name: BlockMaliciousPaths
+          Priority: 0
+          Action:
+            Block: {}
+          Statement:
+            OrStatement:
+              Statements:
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    PositionalConstraint: CONTAINS
+                    TextTransformations:
+                      - Priority: 0
+                        Type: NONE
+                    SearchString: ".env"
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    PositionalConstraint: CONTAINS
+                    TextTransformations:
+                      - Priority: 0
+                        Type: NONE
+                    SearchString: "php"
+                - ByteMatchStatement:
+                    FieldToMatch:
+                      UriPath: {}
+                    PositionalConstraint: CONTAINS
+                    TextTransformations:
+                      - Priority: 0
+                        Type: NONE
+                    SearchString: "aws"
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: false
+            MetricName: BlockMaliciousPaths
+
+  FirewallProtectionLogging:
+    Type: AWS::WAFv2::LoggingConfiguration
+    Properties:
+      LogDestinationConfigs:
+        - !GetAtt FirewallProtectionLogGroup.Arn
+      ResourceArn: !GetAtt FirewallProtection.Arn
+
+  FirewallProtectionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: "aws-waf-logs-rejuve-be-prod/firewall-protection"
+      RetentionInDays: !Ref LogRetentionInDays
+      Tags:
+        - Key: project
+          Value: rejuve
+        - Key: operation
+          Value: firewall
+
+  FirewallProtectionAssociation:
+    Type: AWS::WAFv2::WebACLAssociation
+    Condition: CreateNewLoadBalancer
+    DependsOn: ApplicationLoadBalancer
+    Properties:
+      ResourceArn: !Ref ApplicationLoadBalancer
+      WebACLArn: !GetAtt FirewallProtection.Arn
+
+  RedirectionsWranglerQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: redirections-wrangler-queue
+      VisibilityTimeout: 1800 # 30 minutes
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt RedirectionsWranglerQueueDLQ.Arn
+        maxReceiveCount: 3
+      Tags:
+        - Key: project
+          Value: rejuve-on-edge
+        - Key: component
+          Value: events-wrangler
+        - Key: operation
+          Value: analytics
+
+  # Add a DLQ to the EventsWranglerQueue
+  RedirectionsWranglerQueueDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: redirections-wrangler-queue-dlq
+      VisibilityTimeout: 43200 # 12 hours
+      Tags:
+        - Key: project
+          Value: rejuve-on-edge
+        - Key: component
+          Value: events-wrangler
+        - Key: operation
+          Value: analytics
+
+  MaliciousClicksBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "events-malicious-clicks-${AWS::AccountId}-${AWS::Region}"
+      AccessControl: AwsExecRead
+      # transition all files to One Zone-IA after 5 days
+      LifecycleConfiguration:
+        Rules:
+          - Id: TransitionToOneZoneIA
+            Status: Enabled
+            Transitions:
+              - StorageClass: ONEZONE_IA
+                TransitionInDays: 30
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerPreferred
+      Tags:
+        - Key: project
+          Value: rejuve
+        - Key: operation
+          Value: analytics
+
+  # Lambda for CodeDeploy AllowTraffic
+  AllowTrafficFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: Rejuve-AllowTraffic
+      Handler: index.handler
+      Role: !GetAtt AllowTrafficRole.Arn
+      Runtime: nodejs16.x
+      Timeout: 10
+      MemorySize: 128
+      Code:
+        ZipFile: |
+          exports.handler = async (event) => {
+              console.log('AllowTraffic Event:', JSON.stringify(event));
+              // Always succeed immediately
+              return {
+                  status: 'Succeeded'
+              };
+          };
+      Tags:
+        - Key: Name
+          Value: Rejuve-AllowTraffic
+        - Key: project
+          Value: rejuve
+
+  # Role for AllowTraffic Lambda
+  AllowTrafficRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Tags:
+        - Key: Name
+          Value: Rejuve-AllowTrafficRole
+        - Key: project
+          Value: rejuve
+
+  # CloudWatch Alarm for AllowTraffic timeout
+  AllowTrafficTimeoutAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: AllowTrafficTimeout
+      AlarmDescription: Force timeout after 1 minute for AllowTraffic event
+      MetricName: AllowTrafficTimeout
+      Namespace: AWS/CodeDeploy
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      Tags:
+        - Key: Name
+          Value: AllowTrafficTimeout
+        - Key: project
+          Value: rejuve
+
+####################
+# Outputs
+####################
+
+Outputs:
+  VPC:
+    Description: VPC ID
+    Value: !Ref VPC
+    Export:
+      Name: Rejuve-VPC
+  InternetGateway:
+    Description: Internet Gateway ID
+    Value: !Ref InternetGateway
+    Export:
+      Name: Rejuve-InternetGateway
+  PublicSubnet1:
+    Description: Public Subnet 1 ID
+    Value: !Ref PublicSubnet1
+    Export:
+      Name: Rejuve-PublicSubnet1
+  PublicSubnet2:
+    Description: Public Subnet 2 ID
+    Value: !Ref PublicSubnet2
+    Export:
+      Name: Rejuve-PublicSubnet2
+  PublicSubnet3:
+    Description: Public Subnet 3 ID
+    Value: !Ref PublicSubnet3
+    Export:
+      Name: Rejuve-PublicSubnet3
+  LoadBalancerArn:
+    Description: Application Load Balancer ARN
+    Value: !If [CreateNewLoadBalancer, !Ref ApplicationLoadBalancer, !Ref ExistingLoadBalancerArn]
+  TargetGroupArn:
+    Description: Application Load Balancer Target Group ARN
+    Value: !If [CreateNewTargetGroup, !Ref ALBTargetGroup, !Ref ExistingTargetGroupArn]
+  CloudWatchAlarm:
+    Description: CloudWatch Alarm ID
+    Value: !Ref CloudWatchAlarm
+  RDSPostgresDB:
+    Description: RDS Postgres Database ID
+    Value: !Ref RDSPostgresDB
+  RDSPostgresEndpoint:
+    Description: RDS Postgres Database Endpoint
+    Value: !GetAtt RDSPostgresDB.Endpoint.Address
+    Export:
+      Name: RejuveRDSPostgresEndpoint
+
+  SqsWranglerQueueArn:
+    Description: SQS Queue ARN
+    Value: !GetAtt RedirectionsWranglerQueue.Arn
+    Export:
+      Name: EventsWranglerQueueArn
+
+  SqsWranglerQueueUrl:
+    Description: SQS Queue URL
+    Value: !Ref RedirectionsWranglerQueue
+    Export:
+      Name: EventsWranglerQueueUrl
+
+  SqsWranglerQueueName:
+    Description: SQS Queue Name
+    Value: !GetAtt RedirectionsWranglerQueue.QueueName
+    Export:
+      Name: RedirectionsToWranglerQueueName
+
+  MaliciousClicksBucketName:
+    Description: "MaliciousClicksBucket Name"
+    Value: !Ref MaliciousClicksBucket
+    Export:
+      Name: MaliciousClicksBucketName
+
+  MaliciousClicksBucketArn:
+    Description: "MaliciousClicksBucket ARN"
+    Value: !GetAtt MaliciousClicksBucket.Arn
+    Export:
+      Name: MaliciousClicksBucketArn

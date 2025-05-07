@@ -1,0 +1,32 @@
+version: 0.0
+os: linux
+files:
+  - source: /
+    destination: /opt/rejuve-app
+    overwrite: true
+permissions:
+  - object: /opt/rejuve-app
+    pattern: "**"
+    owner: ubuntu
+    group: ubuntu
+hooks:
+  BeforeInstall:
+    - location: scripts/before-install.sh
+      timeout: 300
+      runas: root
+  AfterInstall:
+    - location: scripts/after-install.sh
+      timeout: 300
+      runas: root
+  ApplicationStart:
+    - location: scripts/start-application.sh
+      timeout: 300
+      runas: root
+  ApplicationStop:
+    - location: scripts/stop-application.sh
+      timeout: 300
+      runas: root
+  AllowTraffic:
+    - location: scripts/allow-traffic.sh
+      timeout: 60
+      runas: root 
